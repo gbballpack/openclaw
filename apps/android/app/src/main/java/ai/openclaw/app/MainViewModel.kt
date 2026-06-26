@@ -172,6 +172,7 @@ class MainViewModel(
   val gatewayBootstrapToken: StateFlow<String> = prefs.gatewayBootstrapToken
   val onboardingCompleted: StateFlow<Boolean> = prefs.onboardingCompleted
   val canvasDebugStatusEnabled: StateFlow<Boolean> = prefs.canvasDebugStatusEnabled
+  val gatewayVerboseLoggingEnabled: StateFlow<Boolean> = prefs.gatewayVerboseLoggingEnabled
   val installedAppsSharingEnabled: StateFlow<Boolean> = prefs.installedAppsSharingEnabled
   val speakerEnabled: StateFlow<Boolean> = prefs.speakerEnabled
   val appearanceThemeMode: StateFlow<AppearanceThemeMode> = prefs.appearanceThemeMode
@@ -361,6 +362,10 @@ class MainViewModel(
 
   fun setCanvasDebugStatusEnabled(value: Boolean) {
     prefs.setCanvasDebugStatusEnabled(value)
+  }
+
+  fun setGatewayVerboseLoggingEnabled(value: Boolean) {
+    prefs.setGatewayVerboseLoggingEnabled(value)
   }
 
   fun setInstalledAppsSharingEnabled(value: Boolean) {

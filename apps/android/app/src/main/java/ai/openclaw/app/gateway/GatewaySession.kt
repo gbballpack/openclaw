@@ -126,6 +126,7 @@ class GatewaySession(
   private val onEvent: (event: String, payloadJson: String?) -> Unit,
   private val onInvoke: (suspend (InvokeRequest) -> InvokeResult)? = null,
   private val onTlsFingerprint: ((stableId: String, fingerprint: String) -> Unit)? = null,
+  private val verboseLogging: () -> Boolean = { false },
 ) {
   private companion object {
     // Keep connect timeout above observed gateway unauthorized close on lower-end devices.
@@ -216,6 +217,10 @@ class GatewaySession(
     options: GatewayConnectOptions,
     tls: GatewayTlsParams? = null,
   ) {
+    verbose(
+      "connect requested role=${options.role} mode=${options.client.mode} endpoint=${endpoint.safeLogLabel()} " +
+        "tls=${tls != null} token=${token.hasValue()} bootstrap=${bootstrapToken.hasValue()} password=${password.hasValue()}",
+    )
     val connectionToClose: Connection?
     synchronized(lifecycleLock) {
       desired = DesiredConnection(endpoint, token, bootstrapToken, password, options, tls)
@@ -232,6 +237,7 @@ class GatewaySession(
 
   /** Clears desired connection state, closes the socket, and stops reconnect attempts. */
   fun disconnect() {
+    verbose("disconnect requested")
     val jobToCancel: Job?
     val connectionToClose: Connection?
     synchronized(lifecycleLock) {
@@ -256,6 +262,7 @@ class GatewaySession(
 
   /** Forces the current socket closed so the loop reconnects to the current desired endpoint. */
   fun reconnect() {
+    verbose("reconnect requested")
     reconnectPausedForAuthFailure = false
     currentConnection?.closeQuietly()
   }
@@ -406,6 +413,7 @@ class GatewaySession(
     suspend fun connect() {
       val url = buildGatewayWebSocketUrl(endpoint.host, endpoint.port, tls != null)
       val request = Request.Builder().url(url).build()
+      verbose("websocket open start role=${options.role} mode=${options.client.mode} url=$url")
       socket = client.newWebSocket(request, Listener())
       try {
         connectDeferred.await()
@@ -422,6 +430,7 @@ class GatewaySession(
       val id = UUID.randomUUID().toString()
       val deferred = CompletableDeferred<RpcResponse>()
       pending[id] = deferred
+      verbose("rpc send method=$method id=${id.take(8)} timeoutMs=$timeoutMs")
       try {
         sendJson(buildRequestFrame(id = id, method = method, params = params))
       } catch (err: Throwable) {
@@ -429,9 +438,15 @@ class GatewaySession(
         throw err
       }
       return try {
-        withTimeout(timeoutMs) { deferred.await() }
+        val response = withTimeout(timeoutMs) { deferred.await() }
+        verbose(
+          "rpc result method=$method id=${id.take(8)} ok=${response.ok} " +
+            "error=${response.error?.code ?: "-"}",
+        )
+        response
       } catch (err: TimeoutCancellationException) {
         pending.remove(id)
+        verbose("rpc timeout method=$method id=${id.take(8)} timeoutMs=$timeoutMs")
         throw IllegalStateException("request timeout")
       }
     }
@@ -491,6 +506,7 @@ class GatewaySession(
 
     fun closeQuietly() {
       if (isClosed.compareAndSet(false, true)) {
+        verbose("websocket close requested role=${options.role} mode=${options.client.mode}")
         incomingMessages.close()
         messagePumpJob.cancel()
         if (!connectDeferred.isCompleted) {
@@ -525,11 +541,16 @@ class GatewaySession(
         webSocket: WebSocket,
         response: Response,
       ) {
+        verbose(
+          "websocket opened role=${options.role} mode=${options.client.mode} " +
+            "http=${response.code} message=${response.message}",
+        )
         scope.launch {
           try {
             val nonce = awaitConnectNonce()
             sendConnect(nonce)
           } catch (err: Throwable) {
+            verbose("connect handshake failed: ${err.logMessage()}")
             connectDeferred.completeExceptionally(err)
             closeQuietly()
           }
@@ -540,6 +561,7 @@ class GatewaySession(
         webSocket: WebSocket,
         text: String,
       ) {
+        verbose("websocket message ${summarizeFrame(text)}")
         incomingMessages.trySend(text)
       }
 
@@ -548,6 +570,10 @@ class GatewaySession(
         t: Throwable,
         response: Response?,
       ) {
+        verbose(
+          "websocket failure role=${options.role} mode=${options.client.mode} error=${t.logMessage()} " +
+            "http=${response?.code ?: "-"} message=${response?.message ?: "-"}",
+        )
         if (!connectDeferred.isCompleted) {
           connectDeferred.completeExceptionally(t)
         }
@@ -564,6 +590,10 @@ class GatewaySession(
         code: Int,
         reason: String,
       ) {
+        verbose(
+          "websocket closed role=${options.role} mode=${options.client.mode} " +
+            "code=$code reason=${reason.ifBlank { "-" }}",
+        )
         if (!connectDeferred.isCompleted) {
           connectDeferred.completeExceptionally(IllegalStateException("Gateway closed: $reason"))
         }
@@ -594,6 +624,10 @@ class GatewaySession(
       if (selectedAuth.attemptedDeviceTokenRetry) {
         pendingDeviceTokenRetry = false
       }
+      verbose(
+        "connect auth selected role=${options.role} source=${selectedAuth.authSource} " +
+          "deviceRetry=${selectedAuth.attemptedDeviceTokenRetry} storedDeviceToken=${storedToken.hasValue()}",
+      )
       val payload =
         buildConnectParams(
           identity = identity,
@@ -613,14 +647,20 @@ class GatewaySession(
             tls = tls,
           )
         if (shouldRetryWithDeviceToken) {
+          verbose(
+            "connect rejected; scheduling device-token retry code=${error.code} " +
+              "detail=${error.details?.code ?: "-"}",
+          )
           pendingDeviceTokenRetry = true
           deviceTokenRetryBudgetUsed = true
         } else if (
           selectedAuth.attemptedDeviceTokenRetry &&
           shouldClearStoredDeviceTokenAfterRetry(error)
         ) {
+          verbose("connect rejected after device-token retry; clearing stored device token code=${error.code}")
           deviceAuthStore.clearToken(identity.deviceId, options.role)
         }
+        verbose("connect rejected role=${options.role} code=${error.code} message=${error.message}")
         throw GatewayConnectFailure(error)
       }
       handleConnectSuccess(res, identity.deviceId, selectedAuth.authSource)
@@ -734,6 +774,10 @@ class GatewaySession(
           ?.get("sessionDefaults")
           .asObjectOrNull()
       mainSessionKey = sessionDefaults?.get("mainSessionKey").asStringOrNull()
+      verbose(
+        "connect success role=${options.role} server=${serverName ?: "-"} remote=$remoteAddress " +
+          "deviceTokenIssued=${deviceToken.hasValue()} mainSessionKey=${mainSessionKey.hasValue()}",
+      )
       onConnected(
         GatewayHelloSummary(
           serverName = serverName,
@@ -1021,16 +1065,19 @@ class GatewaySession(
         continue
       }
       if (reconnectPausedForAuthFailure) {
+        verbose("reconnect paused after auth failure")
         delay(250)
         continue
       }
 
       try {
+        verbose("connect loop attempt=${attempt + 1} target=${target.endpoint.safeLogLabel()}")
         onDisconnected(if (attempt == 0) "Connecting…" else "Reconnecting…")
         connectOnce(target)
         attempt = 0
       } catch (err: Throwable) {
         attempt += 1
+        verbose("connect loop failed attempt=$attempt error=${err.logMessage()}")
         onDisconnected("Gateway error: ${err.message ?: err::class.java.simpleName}")
         val gatewayConnectFailure = err as? GatewayConnectFailure
         val pauseForAuthFailure =
@@ -1044,6 +1091,7 @@ class GatewaySession(
           continue
         }
         val sleepMs = minOf(8_000L, (350.0 * Math.pow(1.7, attempt.toDouble())).toLong())
+        verbose("connect loop retry delayMs=$sleepMs")
         delay(sleepMs)
       }
     }
@@ -1065,6 +1113,7 @@ class GatewaySession(
         conn.connect()
         conn.awaitClose()
       } finally {
+        verbose("connection finished target=${target.endpoint.safeLogLabel()}")
         if (currentConnection === conn) {
           currentConnection = null
           pluginSurfaceUrls = emptyMap()
@@ -1072,6 +1121,41 @@ class GatewaySession(
         }
       }
     }
+
+  private fun verbose(message: String) {
+    if (verboseLogging()) {
+      Log.d("OpenClawGatewayVerbose", message)
+    }
+  }
+
+  private fun String?.hasValue(): Boolean = !this?.trim().isNullOrEmpty()
+
+  private fun Throwable.logMessage(): String = "${this::class.java.simpleName}: ${message ?: "-"}"
+
+  private fun GatewayEndpoint.safeLogLabel(): String {
+    val authority = formatGatewayAuthority(host, port)
+    val label = stableId.substringBefore('|').ifBlank { "gateway" }
+    return "$authority/$label"
+  }
+
+  private fun summarizeFrame(text: String): String {
+    val obj =
+      runCatching { json.parseToJsonElement(text).asObjectOrNull() }.getOrNull()
+        ?: return "type=unparseable bytes=${text.length}"
+    val type = obj["type"].asStringOrNull() ?: "-"
+    val id = obj["id"].asStringOrNull()?.take(8) ?: "-"
+    val event = obj["event"].asStringOrNull()
+    val method = obj["method"].asStringOrNull()
+    val ok = obj["ok"].asBooleanOrNull()
+    return buildString {
+      append("type=").append(type)
+      append(" id=").append(id)
+      event?.let { append(" event=").append(it) }
+      method?.let { append(" method=").append(it) }
+      ok?.let { append(" ok=").append(it) }
+      append(" bytes=").append(text.length)
+    }
+  }
 
   private fun normalizeCanvasHostUrl(
     raw: String?,

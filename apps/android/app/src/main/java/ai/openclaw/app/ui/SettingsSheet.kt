@@ -84,6 +84,7 @@ fun SettingsSheet(viewModel: MainViewModel) {
   val locationPreciseEnabled by viewModel.locationPreciseEnabled.collectAsState()
   val preventSleep by viewModel.preventSleep.collectAsState()
   val canvasDebugStatusEnabled by viewModel.canvasDebugStatusEnabled.collectAsState()
+  val gatewayVerboseLoggingEnabled by viewModel.gatewayVerboseLoggingEnabled.collectAsState()
   val notificationForwardingEnabled by viewModel.notificationForwardingEnabled.collectAsState()
   val notificationForwardingMode by viewModel.notificationForwardingMode.collectAsState()
   val notificationForwardingPackages by viewModel.notificationForwardingPackages.collectAsState()
@@ -1211,6 +1212,21 @@ fun SettingsSheet(viewModel: MainViewModel) {
               Switch(
                 checked = canvasDebugStatusEnabled,
                 onCheckedChange = viewModel::setCanvasDebugStatusEnabled,
+              )
+            },
+          )
+          HorizontalDivider(color = mobileBorder)
+          ListItem(
+            modifier = Modifier.fillMaxWidth(),
+            colors = listItemColors,
+            headlineContent = { Text("Verbose Gateway Logs", style = mobileHeadline) },
+            supportingContent = {
+              Text("Log detailed connection events for debugging.", style = mobileCallout)
+            },
+            trailingContent = {
+              Switch(
+                checked = gatewayVerboseLoggingEnabled,
+                onCheckedChange = viewModel::setGatewayVerboseLoggingEnabled,
               )
             },
           )

@@ -117,6 +117,10 @@ class SecurePrefs(
     MutableStateFlow(plainPrefs.getBoolean("canvas.debugStatusEnabled", false))
   val canvasDebugStatusEnabled: StateFlow<Boolean> = _canvasDebugStatusEnabled
 
+  private val _gatewayVerboseLoggingEnabled =
+    MutableStateFlow(plainPrefs.getBoolean("gateway.verboseLoggingEnabled", false))
+  val gatewayVerboseLoggingEnabled: StateFlow<Boolean> = _gatewayVerboseLoggingEnabled
+
   private val _installedAppsSharingEnabled =
     MutableStateFlow(plainPrefs.getBoolean(installedAppsSharingEnabledKey, false))
   val installedAppsSharingEnabled: StateFlow<Boolean> = _installedAppsSharingEnabled
@@ -261,6 +265,11 @@ class SecurePrefs(
   fun setCanvasDebugStatusEnabled(value: Boolean) {
     plainPrefs.edit { putBoolean("canvas.debugStatusEnabled", value) }
     _canvasDebugStatusEnabled.value = value
+  }
+
+  fun setGatewayVerboseLoggingEnabled(value: Boolean) {
+    plainPrefs.edit { putBoolean("gateway.verboseLoggingEnabled", value) }
+    _gatewayVerboseLoggingEnabled.value = value
   }
 
   fun setInstalledAppsSharingEnabled(value: Boolean) {

@@ -136,4 +136,19 @@ class SecurePrefsTest {
     assertNull(prefs.loadGatewayBootstrapToken())
     assertNull(prefs.loadGatewayPassword())
   }
+
+  @Test
+  fun gatewayVerboseLoggingEnabled_defaultsOffAndPersists() {
+    val context = RuntimeEnvironment.getApplication()
+    val plainPrefs = context.getSharedPreferences("openclaw.node", Context.MODE_PRIVATE)
+    plainPrefs.edit().clear().commit()
+    val prefs = SecurePrefs(context)
+
+    assertFalse(prefs.gatewayVerboseLoggingEnabled.value)
+
+    prefs.setGatewayVerboseLoggingEnabled(true)
+
+    assertTrue(prefs.gatewayVerboseLoggingEnabled.value)
+    assertTrue(plainPrefs.getBoolean("gateway.verboseLoggingEnabled", false))
+  }
 }

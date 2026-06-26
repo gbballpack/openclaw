@@ -507,6 +507,7 @@ class NodeRuntime(
       onEvent = { event, payloadJson ->
         handleGatewayEvent(event, payloadJson)
       },
+      verboseLogging = { gatewayVerboseLoggingEnabled.value },
     )
 
   private suspend fun subscribeOperatorSessionEvents() {
@@ -560,6 +561,7 @@ class NodeRuntime(
       onTlsFingerprint = { stableId, fingerprint ->
         prefs.saveGatewayTlsFingerprint(stableId, fingerprint)
       },
+      verboseLogging = { gatewayVerboseLoggingEnabled.value },
     )
 
   init {
@@ -964,6 +966,7 @@ class NodeRuntime(
 
   val lastDiscoveredStableId: StateFlow<String> = prefs.lastDiscoveredStableId
   val canvasDebugStatusEnabled: StateFlow<Boolean> = prefs.canvasDebugStatusEnabled
+  val gatewayVerboseLoggingEnabled: StateFlow<Boolean> = prefs.gatewayVerboseLoggingEnabled
   val installedAppsSharingEnabled: StateFlow<Boolean> = prefs.installedAppsSharingEnabled
   val notificationForwardingEnabled: StateFlow<Boolean> = prefs.notificationForwardingEnabled
   val notificationForwardingMode: StateFlow<NotificationPackageFilterMode> =
@@ -1177,6 +1180,10 @@ class NodeRuntime(
 
   fun setCanvasDebugStatusEnabled(value: Boolean) {
     prefs.setCanvasDebugStatusEnabled(value)
+  }
+
+  fun setGatewayVerboseLoggingEnabled(value: Boolean) {
+    prefs.setGatewayVerboseLoggingEnabled(value)
   }
 
   fun setInstalledAppsSharingEnabled(value: Boolean) {
